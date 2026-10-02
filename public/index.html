@@ -62,7 +62,19 @@
       </section>
 
       <section class="panel">
-        <h2>④ 确认导出</h2>
+        <h2>④ 修订提议（校对）</h2>
+        <p class="hint">校对者提交一组待采纳修订：<code>{"note":"说明","items":[{"subtitle_id":1,"version":1,"text":"替代文本","start_ms":null,"end_ms":null,"note":"逐项说明"}]}</code>。
+        提交不改正式字幕；采纳时整组核对生效。</p>
+        <textarea id="proposal-json" rows="6" spellcheck="false" placeholder='{"note":"...","items":[...]}'></textarea>
+        <div class="row buttons">
+          <button id="btn-proposal-template" class="secondary">填入模板</button>
+          <button id="btn-proposal-submit" class="primary">提交提议</button>
+        </div>
+        <ul id="proposal-list" class="export-list"></ul>
+      </section>
+
+      <section class="panel">
+        <h2>⑤ 确认导出</h2>
         <button id="btn-export" class="primary wide">确认当前字幕并导出 WebVTT</button>
         <ul id="export-list" class="export-list"></ul>
         <p class="hint">每次确认生成一个不可变版本，可随时再次下载；后续修改不影响旧文件。</p>
@@ -73,6 +85,15 @@
       <div id="conflict-panel" class="panel conflict hidden">
         <h2>⚠ 冲突报告</h2>
         <ul id="conflict-list"></ul>
+      </div>
+
+      <div id="proposal-panel" class="panel hidden">
+        <h2>修订提议预览 <span id="proposal-meta" class="tag"></span></h2>
+        <div id="proposal-items"></div>
+        <ul id="proposal-conflicts" class="proposal-conflicts"></ul>
+        <div class="row buttons">
+          <button id="btn-proposal-adopt" class="primary">采纳该提议（整组生效）</button>
+        </div>
       </div>
 
       <div class="panel">

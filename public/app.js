@@ -6,6 +6,7 @@ const state = {
   projects: [],
   project: null,      // 当前项目完整载荷
   edits: new Map(),   // cueId -> { text, start_ms, end_ms } 未保存修改
+  preview: null,      // 当前打开的提议预览
 };
 
 // ---------- 工具 ----------
@@ -76,7 +77,10 @@ function renderAll() {
   renderRules();
   renderSubtitles();
   renderExports();
+  renderProposals();
   $('#force-row').classList.add('hidden');
+  $('#proposal-panel').classList.add('hidden');
+  state.preview = null;
 }
 
 function renderRules() {
@@ -323,6 +327,170 @@ async function doExport() {
   }
 }
 
+// ---------- 修订提议（校对） ----------
+
+function renderProposals() {
+  const p = state.project;
+  const ul = $('#proposal-list');
+  ul.innerHTML = '';
+  if (!p || !p.proposals || p.proposals.length === 0) {
+    ul.innerHTML = '<li class="empty">尚无修订提议</li>';
+    return;
+  }
+  for (const pr of p.proposals) {
+    const li = document.createElement('li');
+    const info = document.createElement('span');
+    info.innerHTML =
+      `<span class="status-${pr.status}">#${pr.id} ${pr.status === 'adopted' ? '✅ 已采纳' : '⏳ 待采纳'}</span> ` +
+      `${pr.note ? `「${pr.note}」` : ''} ${pr.item_count} 条 · ${pr.created_at}`;
+    const ops = document.createElement('span');
+    ops.className = 'ops';
+    const pvBtn = document.createElement('button');
+    pvBtn.className = 'small secondary';
+    pvBtn.textContent = '预览';
+    pvBtn.onclick = () => previewProposal(pr.id);
+    ops.appendChild(pvBtn);
+    if (pr.status === 'pending') {
+      const adBtn = document.createElement('button');
+      adBtn.className = 'small';
+      adBtn.textContent = '采纳';
+      adBtn.onclick = () => adoptProposal(pr.id);
+      ops.appendChild(adBtn);
+    }
+    li.append(info, ops);
+    ul.appendChild(li);
+  }
+}
+
+function fillProposalTemplate() {
+  const p = state.project;
+  if (!p || p.subtitles.length === 0) return toast('请先排版生成字幕', true);
+  const items = p.subtitles.filter((s) => !s.locked).slice(0, 2).map((s) => ({
+    subtitle_id: s.id,
+    version: s.version,
+    text: s.text,
+    start_ms: null,
+    end_ms: null,
+    note: '',
+  }));
+  if (items.length === 0) return toast('当前没有未锁定字幕可修订', true);
+  $('#proposal-json').value = JSON.stringify({ note: '', items }, null, 2);
+  toast('已按当前未锁定字幕填入模板，请修改 text/时间后提交');
+}
+
+async function submitProposal() {
+  const p = state.project;
+  if (!p) return toast('请先选择项目', true);
+  let data;
+  try {
+    data = JSON.parse($('#proposal-json').value);
+  } catch (e) {
+    return toast('JSON 解析失败：' + e.message, true);
+  }
+  clearConflicts();
+  const { status, body } = await api(`/api/projects/${p.id}/proposals`, {
+    method: 'POST', body: JSON.stringify(data),
+  });
+  if (status === 201) {
+    toast(`提议 #${body.id} 已提交（${body.items.length} 条），正式字幕未改动`);
+    await loadProject(p.id);
+    await previewProposal(body.id);
+  } else {
+    toast((body?.errors || [body?.error || '提交失败']).join('；'), true);
+  }
+}
+
+async function previewProposal(id) {
+  const p = state.project;
+  if (!p) return;
+  clearConflicts();
+  const { status, body } = await api(`/api/projects/${p.id}/proposals/${id}/preview`);
+  if (status !== 200) return toast(body?.error || '预览失败', true);
+  state.preview = body;
+  renderProposalPreview();
+}
+
+function renderProposalPreview() {
+  const pv = state.preview;
+  const panel = $('#proposal-panel');
+  const box = $('#proposal-items');
+  const ul = $('#proposal-conflicts');
+  box.innerHTML = '';
+  ul.innerHTML = '';
+  if (!pv) { panel.classList.add('hidden'); return; }
+
+  $('#proposal-meta').textContent =
+    `#${pv.proposal.id} ${pv.proposal.status === 'adopted' ? '✅ 已采纳' : '⏳ 待采纳'}` +
+    ` · 基于规则 v${pv.proposal.rules_version}（当前 v${pv.current.rules_version}）` +
+    (pv.proposal.note ? ` · 「${pv.proposal.note}」` : '');
+
+  const fmtCue = (v) => (v ? `"${v.text}" [${v.start_ms}, ${v.end_ms}]` : '（不存在）');
+  for (const item of pv.items) {
+    const div = document.createElement('div');
+    div.className = 'proposal-item' + (item.conflicts.length ? ' has-conflict' : '');
+    const cur = item.current;
+    const drifted = cur && (cur.version !== item.orig_version ||
+      cur.text !== item.original.text || cur.start_ms !== item.original.start_ms ||
+      cur.end_ms !== item.original.end_ms);
+    div.innerHTML =
+      `<div class="pv-head">字幕 #${item.subtitle_id}（读取时行版本 v${item.base_version}）` +
+      `${item.note ? ` · 说明：${item.note}` : ''}</div>` +
+      `<div class="pv-row"><span class="pv-label">原值</span><span>${fmtCue(item.original)}</span></div>` +
+      `<div class="pv-row"><span class="pv-label">建议值</span><span class="pv-diff">${fmtCue(item.suggested)}</span></div>` +
+      (cur
+        ? `<div class="pv-row"><span class="pv-label">当前值</span>` +
+          `<span class="${drifted ? 'pv-diff' : ''}">${fmtCue(cur)}（v${cur.version}${cur.locked ? ' 🔒' : ''}）</span></div>`
+        : `<div class="pv-row"><span class="pv-label">当前值</span><span class="pv-diff">（目标已不存在）</span></div>`) +
+      (item.conflicts.length
+        ? `<div class="pv-conflicts">⚠ ${item.conflicts.join('<br>⚠ ')}</div>`
+        : '');
+    box.appendChild(div);
+  }
+
+  for (const c of pv.conflicts) {
+    const li = document.createElement('li');
+    li.textContent = `⚠ ${c.subtitle_id ? `字幕 #${c.subtitle_id}：` : ''}${c.message}`;
+    ul.appendChild(li);
+  }
+
+  const adoptBtn = $('#btn-proposal-adopt');
+  adoptBtn.disabled = !pv.adoptable;
+  adoptBtn.textContent = pv.proposal.status === 'adopted'
+    ? '该提议已采纳'
+    : pv.adoptable
+      ? '采纳该提议（整组生效）'
+      : `存在 ${pv.conflicts.length} 处冲突，暂不可采纳`;
+
+  panel.classList.remove('hidden');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function adoptProposal(id) {
+  const p = state.project;
+  if (!p) return;
+  clearConflicts();
+  const { status, body } = await api(`/api/projects/${p.id}/proposals/${id}/adopt`, {
+    method: 'POST',
+  });
+  if (status === 200) {
+    toast(body.already_adopted
+      ? `提议 #${id} 此前已采纳，本次未改动任何字幕`
+      : `提议 #${id} 已采纳，整组修订生效（字幕集 v${body.sub_version}）`);
+    await loadProject(p.id);
+    await previewProposal(id);
+  } else if (status === 409) {
+    toast(`${body.error}：${(body.reasons || []).join('；')}`, true);
+    await loadProject(p.id);
+    await previewProposal(id);
+  } else if (status === 422) {
+    renderConflicts(body.conflicts || [], `⚠ ${body.error}`);
+    toast(body.error, true);
+    await previewProposal(id);
+  } else {
+    toast(body?.error || '采纳失败', true);
+  }
+}
+
 async function doImport() {
   const p = state.project;
   let data;
@@ -411,6 +579,11 @@ $('#btn-save-rules').addEventListener('click', saveRules);
 $('#btn-layout').addEventListener('click', runLayout);
 $('#btn-export').addEventListener('click', doExport);
 $('#btn-import').addEventListener('click', doImport);
+$('#btn-proposal-template').addEventListener('click', fillProposalTemplate);
+$('#btn-proposal-submit').addEventListener('click', submitProposal);
+$('#btn-proposal-adopt').addEventListener('click', () => {
+  if (state.preview) adoptProposal(state.preview.proposal.id);
+});
 $('#btn-sample').addEventListener('click', () => {
   $('#import-json').value = samplePayload([6000, 11000, 14000, 19000]);
   toast('已载入示例，点击「导入」');

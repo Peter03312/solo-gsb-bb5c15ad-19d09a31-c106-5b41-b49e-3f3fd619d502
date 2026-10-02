@@ -158,12 +158,33 @@ button.danger { background: transparent; border: 1px solid var(--danger); color:
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 6px;
   font-size: 13px;
   padding: 6px 8px;
   border-bottom: 1px solid var(--border);
 }
 .export-list a { color: var(--accent); text-decoration: none; }
 .export-list a:hover { text-decoration: underline; }
+.export-list .ops { display: flex; gap: 6px; }
+.export-list .status-adopted { color: var(--ok); }
+.export-list .status-pending { color: var(--accent); }
+
+.proposal-item {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 8px 0;
+  font-size: 13px;
+}
+.proposal-item.has-conflict { border-color: var(--danger); }
+.proposal-item .pv-head { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+.proposal-item .pv-row { display: grid; grid-template-columns: 64px 1fr; gap: 6px; line-height: 1.6; }
+.proposal-item .pv-label { color: var(--muted); }
+.proposal-item .pv-diff { color: var(--accent); }
+.proposal-item .pv-conflicts { color: var(--danger); font-size: 12px; margin-top: 4px; }
+.proposal-conflicts { list-style: none; padding: 0; margin: 8px 0; }
+.proposal-conflicts li { color: var(--danger); font-size: 12px; line-height: 1.7; }
 
 .empty { color: var(--muted); font-size: 13px; padding: 20px; text-align: center; }
 
