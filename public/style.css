@@ -167,6 +167,40 @@ button.danger { background: transparent; border: 1px solid var(--danger); color:
 
 .empty { color: var(--muted); font-size: 13px; padding: 20px; text-align: center; }
 
+/* 批量修订提议 */
+.rev-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.rev-head {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px; font-size: 13px;
+}
+.rev-head.accepted { border-color: var(--ok); }
+.rev-head .rev-title { flex: 1; }
+.rev-head .rev-note { color: var(--muted); font-size: 12px; }
+.status-tag {
+  font-size: 11px; border-radius: 4px; padding: 2px 8px; white-space: nowrap;
+  background: rgba(79,140,255,.18); color: var(--accent);
+}
+.status-tag.accepted { background: rgba(81,207,138,.18); color: var(--ok); }
+
+.rev-items { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.rev-item {
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel-2); padding: 8px 12px;
+}
+.rev-item.bad { border-color: var(--danger); }
+.rev-item .rev-line { display: flex; gap: 8px; font-size: 13px; line-height: 1.7; align-items: baseline; }
+.rev-item .rev-line .k { color: var(--muted); width: 56px; flex: none; font-size: 12px; }
+.rev-item .rev-line .v { flex: 1; word-break: break-all; }
+.rev-item .rev-line.proposed .v { color: var(--accent); }
+.rev-item .rev-line.current .v { color: var(--ok); }
+.rev-item .rev-reasons { margin: 6px 0 0; padding-left: 64px; }
+.rev-item .rev-reasons li { color: var(--danger); font-size: 12px; line-height: 1.6; list-style: none; }
+.rev-item .state { font-size: 11px; color: var(--danger); margin-left: 6px; }
+.rev-item .state.ok { color: var(--ok); }
+.rev-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+
+
 @media (max-width: 1100px) {
   main { grid-template-columns: 1fr; }
   .cue-row { grid-template-columns: 28px 80px 80px 1fr 100px 130px; }

@@ -76,6 +76,7 @@ function renderAll() {
   renderRules();
   renderSubtitles();
   renderExports();
+  renderRevisions();
   $('#force-row').classList.add('hidden');
 }
 
@@ -185,6 +186,216 @@ function renderExports() {
     li.append(a, info);
     ul.appendChild(li);
   }
+}
+
+// ---------- 批量修订提议 ----------
+
+function renderRevisions() {
+  const p = state.project;
+  const box = $('#rev-list');
+  box.innerHTML = '';
+  $('#rev-detail-panel').classList.add('hidden');
+  if (!p) return;
+  const list = p.revisions || [];
+  const pending = list.filter((r) => r.status === 'pending').length;
+  $('#rev-stats').textContent = `（共 ${list.length} 组，待采纳 ${pending} 组）`;
+  if (list.length === 0) {
+    box.innerHTML = '<div class="empty">尚无修订提议。校对时可在左下角按 JSON 提交一组。</div>';
+    return;
+  }
+  for (const r of list) {
+    const row = document.createElement('div');
+    row.className = 'rev-head' + (r.status === 'accepted' ? ' accepted' : '');
+    const title = document.createElement('div');
+    title.className = 'rev-title';
+    const note = r.note ? ` · ${escapeHtml(r.note)}` : '';
+    title.innerHTML =
+      `提议 #${r.id}${note}<div class="rev-note">` +
+      `${r.item_count} 项 · 规则 v${r.rules_version_snapshot} · 字幕集 v${r.sub_version_snapshot} · ${r.created_at}` +
+      (r.accepted_sub_version ? ` · 采纳于字幕集 v${r.accepted_sub_version}` : '') +
+      '</div>';
+    const tag = document.createElement('span');
+    tag.className = 'status-tag' + (r.status === 'accepted' ? ' accepted' : '');
+    tag.textContent = r.status === 'accepted' ? '✓ 已采纳' : '待采纳';
+    const btn = document.createElement('button');
+    btn.className = 'small secondary';
+    btn.textContent = '查看/预览';
+    btn.onclick = () => openRevision(r.id);
+    row.append(title, tag, btn);
+    box.appendChild(row);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (ch) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]
+  ));
+}
+
+function revLine(label, value, cls) {
+  const line = document.createElement('div');
+  line.className = 'rev-line' + (cls ? ` ${cls}` : '');
+  const k = document.createElement('span');
+  k.className = 'k'; k.textContent = label;
+  const v = document.createElement('span');
+  v.className = 'v'; v.textContent = value;
+  line.append(k, v);
+  return line;
+}
+
+function renderRevItem(it) {
+  const div = document.createElement('div');
+  const hasProblems = it.state !== 'ok' || it.conflicts.length > 0;
+  div.className = 'rev-item' + (hasProblems ? ' bad' : '');
+
+  const head = document.createElement('div');
+  head.className = 'rev-line';
+  head.innerHTML =
+    `<span class="k">第 ${it.ord + 1} 项</span>` +
+    `<span class="v">字幕 #${it.subtitle_id}（读取版本 v${it.cue_version}）` +
+    `<span class="state ${it.state === 'ok' ? 'ok' : ''}">${
+      it.state === 'ok' ? '✓ 可采纳' :
+      it.state === 'stale' ? '⚠ 行版本过期' :
+      it.state === 'locked' ? '🔒 已锁定' : '✗ 已不存在'
+    }</span></span>`;
+  div.appendChild(head);
+
+  div.appendChild(revLine('原值', `"${it.orig.text}" [${it.orig.start_ms}, ${it.orig.end_ms}]`));
+  if (it.cue) {
+    const changed = it.cue.text !== it.orig.text ||
+      it.cue.start_ms !== it.orig.start_ms || it.cue.end_ms !== it.orig.end_ms;
+    div.appendChild(revLine('当前值', `"${it.cue.text}" [${it.cue.start_ms}, ${it.cue.end_ms}]`,
+      changed ? 'current' : ''));
+  }
+  div.appendChild(revLine('建议值', `"${it.proposed.text}" [${it.proposed.start_ms}, ${it.proposed.end_ms}]`,
+    'proposed'));
+
+  if (it.conflicts.length > 0) {
+    const ul = document.createElement('ul');
+    ul.className = 'rev-reasons';
+    for (const c of it.conflicts) {
+      const li = document.createElement('li');
+      li.textContent = '• ' + c.message;
+      ul.appendChild(li);
+    }
+    div.appendChild(ul);
+  }
+  return div;
+}
+
+async function openRevision(rid) {
+  const p = state.project;
+  const { status, body } = await api(`/api/projects/${p.id}/revisions/${rid}/preview`, { method: 'POST' });
+  if (status !== 200) return toast(body?.error || '预览失败', true);
+  const { revision, evaluation } = body;
+  const panel = $('#rev-detail-panel');
+  const box = $('#rev-detail-body');
+  box.innerHTML = '';
+  $('#rev-detail-title').textContent =
+    `提议 #${revision.id}（${revision.status === 'accepted' ? '✓ 已采纳' : '待采纳'}）${
+      revision.note ? '：' + escapeHtml(revision.note) : ''
+    }`;
+
+  if (evaluation.already_accepted) {
+    const info = document.createElement('p');
+    info.className = 'hint';
+    info.textContent = `该提议已采纳（字幕集推进到 v${revision.accepted_sub_version}），重复提交不再改动字幕；以下为历史快照。`;
+    box.appendChild(info);
+  }
+
+  const itemsBox = document.createElement('div');
+  itemsBox.className = 'rev-items';
+  for (const it of evaluation.items) itemsBox.appendChild(renderRevItem(it));
+  box.appendChild(itemsBox);
+
+  if (evaluation.conflicts && evaluation.conflicts.length > 0) {
+    const ul = document.createElement('ul');
+    ul.className = 'rev-reasons';
+    for (const c of evaluation.conflicts) {
+      const li = document.createElement('li');
+      li.textContent = `整版：词 ${c.word_start}${c.word_end !== c.word_start ? '–' + c.word_end : ''} ${c.message}`;
+      ul.appendChild(li);
+    }
+    box.appendChild(ul);
+  }
+
+  if (revision.status === 'pending') {
+    const actions = document.createElement('div');
+    actions.className = 'rev-actions';
+    const verdict = document.createElement('span');
+    verdict.className = 'hint';
+    verdict.style.flex = '1';
+    verdict.textContent = evaluation.ok
+      ? `✓ 整组核对通过（当前规则 v${p.rules.version}），可整组采纳（原子写入）`
+      : '✗ 存在冲突或过期项，采纳将被整组拒绝';
+    verdict.style.color = evaluation.ok ? 'var(--ok)' : 'var(--danger)';
+    const acceptBtn = document.createElement('button');
+    acceptBtn.textContent = '整组采纳';
+    acceptBtn.disabled = !evaluation.ok;
+    acceptBtn.style.opacity = evaluation.ok ? 1 : 0.5;
+    acceptBtn.onclick = () => acceptRevision(rid);
+    actions.append(verdict, acceptBtn);
+    box.appendChild(actions);
+  }
+  panel.classList.remove('hidden');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function submitRevision() {
+  const p = state.project;
+  if (!p) return toast('请先选择项目', true);
+  let parsed;
+  try {
+    parsed = JSON.parse($('#rev-json').value || '{}');
+  } catch (e) {
+    return toast('JSON 解析失败：' + e.message, true);
+  }
+  const payload = { note: $('#rev-note').value.trim(), ...parsed };
+  const { status, body } = await api(`/api/projects/${p.id}/revisions`, {
+    method: 'POST', body: JSON.stringify(payload),
+  });
+  if (status === 201) {
+    toast(`提议 #${body.id} 已保存（${body.items.length} 项），未改动正式字幕，请预览核对`);
+    await loadProject(p.id);
+    openRevision(body.id);
+  } else if (status === 400) {
+    toast('请求非法：' + (body.errors || []).join('；'), true);
+  } else if (status === 422) {
+    toast('目标状态校验失败：' + (body.errors || []).join('；'), true);
+  } else {
+    toast(body?.error || '提交失败', true);
+  }
+}
+
+async function acceptRevision(rid) {
+  const p = state.project;
+  const { status, body } = await api(`/api/projects/${p.id}/revisions/${rid}/accept`, { method: 'POST' });
+  if (status === 200) {
+    toast(`✓ 提议 #${rid} 已整组采纳（${body.applied} 项，字幕集 v${body.sub_version}）`);
+    await loadProject(p.id);
+    openRevision(rid);
+  } else if (status === 409 || status === 422) {
+    const itemReasons = (body.items || [])
+      .map((i) => `#${i.subtitle_id}: ${(i.reasons || []).map((r) => r.message).join('；')}`);
+    const groupReasons = (body.conflicts || []).map((c) => c.message);
+    toast((body.error || '采纳失败') +
+      (itemReasons.length || groupReasons.length ? '：' + [...itemReasons, ...groupReasons].join('｜') : ''), true);
+    await loadProject(p.id);
+    openRevision(rid);
+  } else {
+    toast(body?.error || '采纳失败', true);
+  }
+}
+
+function fillRevisionTemplate() {
+  const p = state.project;
+  if (!p) return toast('请先选择项目', true);
+  const items = p.subtitles.filter((s) => !s.locked).map((s) => ({
+    subtitle_id: s.id, cue_version: s.version, text: s.text,
+    start_ms: s.start_ms, end_ms: s.end_ms,
+  }));
+  $('#rev-json').value = JSON.stringify({ items }, null, 2);
+  toast('已填入全部未锁定行（按需删除/修改；时间字段可整段省略）');
 }
 
 function renderConflicts(conflicts, title) {
@@ -420,5 +631,7 @@ $('#btn-sample-conflict').addEventListener('click', () => {
   $('#import-json').value = samplePayload([1300, 6000, 11000, 14000, 19000]);
   toast('已载入冲突示例（切点落在词内部），导入后点「重新排版」查看冲突报告');
 });
+$('#btn-rev-submit').addEventListener('click', submitRevision);
+$('#btn-rev-fill').addEventListener('click', fillRevisionTemplate);
 
 loadProjects();

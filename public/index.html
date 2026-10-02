@@ -67,12 +67,35 @@
         <ul id="export-list" class="export-list"></ul>
         <p class="hint">每次确认生成一个不可变版本，可随时再次下载；后续修改不影响旧文件。</p>
       </section>
+
+      <section class="panel">
+        <h2>⑤ 批量修订提议（校对）</h2>
+        <p class="hint">针对<strong>未锁定</strong>字幕一次提交一组修订，不直接改正正式字幕；预览核对后再整组采纳。
+        格式：<code>{"note":"说明","items":[{"subtitle_id":1,"cue_version":1,"text":"替代文本","start_ms":0,"end_ms":1000}]}</code>
+        （时间可省略；空组、重复 ID、空文本、非法时间会被拒绝）</p>
+        <input id="rev-note" type="text" placeholder="说明（可选）">
+        <textarea id="rev-json" rows="6" spellcheck="false" placeholder='{"items":[{"subtitle_id":1,"cue_version":1,"text":"…"}]}'></textarea>
+        <div class="row buttons">
+          <button id="btn-rev-fill" class="secondary">填入所有行</button>
+          <button id="btn-rev-submit" class="primary">提交提议</button>
+        </div>
+      </section>
     </aside>
 
     <section class="content">
       <div id="conflict-panel" class="panel conflict hidden">
         <h2>⚠ 冲突报告</h2>
         <ul id="conflict-list"></ul>
+      </div>
+
+      <div class="panel">
+        <h2>修订提议历史 <span id="rev-stats" class="hint"></span></h2>
+        <div id="rev-list" class="rev-list"></div>
+      </div>
+
+      <div id="rev-detail-panel" class="panel hidden">
+        <h2 id="rev-detail-title"></h2>
+        <div id="rev-detail-body"></div>
       </div>
 
       <div class="panel">
